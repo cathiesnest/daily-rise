@@ -133,6 +133,10 @@
 
     <div class="card"><h2>Tonight: one good thing</h2>
       <input type="text" id="grat" placeholder="Something that went right today, even small">
+      <div class="row" style="margin-top:10px">
+        <button onclick="saveGood()">Save</button>
+        <button class="ghost" onclick="clearGood()">Clear / reset</button></div>
+      <div id="goodList"></div>
       <p class="tag" id="gratNote"></p></div>
 
     <div class="card" style="text-align:center"><p id="quote" style="font-style:italic;margin:0"></p></div>
@@ -311,10 +315,7 @@ $('#newTask').addEventListener('keydown',e=>{if(e.key==='Enter')addTask()});
 
 // Gratitude
 let grat=store.get('grat',{});
-$('#grat').value=grat[today]||'';
-function showGrat(){const n=Object.values(grat).filter(Boolean).length;$('#gratNote').textContent=n?`Good things noted: ${n}`:''}
-$('#grat').oninput=e=>{grat[today]=e.target.value;store.set('grat',grat);showGrat()};
-showGrat();
+// (good things are now saved with a date and time; see "Good things journal")
 
 // Lists
 function drawList(el){const k=el.dataset.key,items=store.get(k,[]);
@@ -490,6 +491,7 @@ function weekBuild(){
   L.push('','LAST 7 DAYS');
   for(let i=6;i>=0;i--){const d=new Date();d.setDate(d.getDate()-i);const k=d.toDateString();
     L.push(d.toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'})+': mood '+(mood[k]!=null?nm[mood[k]]:'-')+', habits '+((hab[k]||[]).length)+'/'+habitList.length+(grat[k]?', good thing: '+grat[k]:''));}
+  {const gw=goods.filter(g=>g.ts>Date.now()-7*864e5);L.push('','GOOD THINGS (last 7 days)');gw.length?gw.forEach(g=>L.push('- '+g.t+' ('+fmtTs(g)+')')):L.push('(nothing yet)')}
   sect('KIDS - Pablo',mk('pablo'));
   sect('KIDS - Zoe',mk('zoe'));
   sect('MONEY - Bills',mk('bills'));
@@ -526,7 +528,7 @@ $('#restoreFile').onchange=e=>{const f=e.target.files[0];if(!f)return;const r=ne
     Object.entries(o).forEach(([k,v])=>{if(k.startsWith('sir_'))localStorage.setItem(k,v)});location.reload()}catch(x){alert('That file could not be read.')}};
   r.readAsText(f)};
 function clearToday(){if(!confirm("Clear today's mood, habits, steps and good thing?"))return;
-  delete mood[today];store.set('mood',mood);hab[today]=[];store.set('hab',hab);delete grat[today];store.set('grat',grat);
+  delete mood[today];store.set('mood',mood);hab[today]=[];store.set('hab',hab);delete grat[today];store.set('grat',grat);goods=goods.filter(g=>new Date(g.ts).toDateString()!==today);store.set('goods',goods);
   try{localStorage.removeItem('sir_tasks:'+today)}catch(e){}location.reload()}
 function clearLists(){if(!confirm('Clear the Kids, Money, Work and Me lists?'))return;
   ['pablo','zoe','bills','biz','me'].forEach(k=>store.set(k,[]));$$('.list').forEach(drawList)}
@@ -611,6 +613,25 @@ function randomReminder(){
   let t=REMINDERS[i];
   if(mine&&Math.random()<0.35)t='In your own words: “'+(mine.length>140?mine.slice(0,140)+'…':mine)+'” That still holds true. '+t;
   const o=$('#remindOut');o.textContent=t;o.hidden=false;}
+
+// Good things journal: every entry is saved on this phone with its date and time
+let goods=store.get('goods',null);
+if(goods===null){goods=[];Object.keys(grat).forEach(k=>{if(grat[k]){const ts=new Date(k).getTime();if(!isNaN(ts))goods.push({t:grat[k],ts,nt:1})}});goods.sort((a,b)=>a.ts-b.ts);store.set('goods',goods)}
+function fmtTs(g){return new Date(g.ts).toLocaleString(undefined,g.nt?{weekday:'short',month:'short',day:'numeric',year:'numeric'}:{weekday:'short',month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'})}
+function syncGrat(){const d={};goods.forEach(g=>{const k=new Date(g.ts).toDateString();d[k]=d[k]?d[k]+' / '+g.t:g.t});grat=d;store.set('grat',grat)}
+function drawGood(msg){
+  const shown=goods.slice(-10).reverse();
+  $('#goodList').innerHTML=goods.length?'<div style="margin-top:14px">'+shown.map(g=>{const idx=goods.indexOf(g);
+    return `<div style="padding:10px 0;border-top:1px solid var(--line);display:flex;gap:10px;align-items:flex-start"><div style="flex:1"><div>${esc(g.t)}</div><div class="tag">${esc(fmtTs(g))}</div></div><button class="ghost" style="padding:4px 10px" onclick="delGood(${idx})" aria-label="Remove this one">&times;</button></div>`}).join('')
+    +'<button class="ghost" style="margin-top:8px;font-size:14px;padding:6px 12px" onclick="clearAllGood()">Delete all saved</button></div>':'';
+  $('#gratNote').textContent=(msg?msg+' ':'')+(goods.length?'Saved on this phone: '+goods.length+' in all'+(goods.length>10?' (showing the latest 10)':'')+'.':'Saved on this phone, with the date and time.');}
+function saveGood(){const v=$('#grat').value.trim();if(!v)return;
+  goods.push({t:v,ts:Date.now()});store.set('goods',goods);syncGrat();$('#grat').value='';drawGood('Saved. Well done.')}
+function clearGood(){$('#grat').value='';$('#grat').focus()}
+function delGood(i){goods.splice(i,1);store.set('goods',goods);syncGrat();drawGood()}
+function clearAllGood(){if(!confirm('Delete all saved good things?'))return;goods=[];store.set('goods',goods);syncGrat();drawGood()}
+$('#grat').addEventListener('keydown',e=>{if(e.key==='Enter')saveGood()});
+drawGood();
 
 drawMood();drawHabits();drawTasks();$$('.list').forEach(drawList);drawTrust();
 </script>
