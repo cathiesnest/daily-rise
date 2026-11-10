@@ -70,6 +70,8 @@
   input[type=text],textarea,select{background:rgba(8,7,22,.6)}
   .mood button{background:rgba(8,7,22,.6)}
   .bot{background:rgba(8,7,22,.6)}
+  .credit{text-align:center;margin:34px 0 8px;padding-top:18px;border-top:1px solid var(--line);color:var(--soft);font-size:13px;line-height:1.6}
+  .credit b{display:block;color:var(--accent);font-weight:normal;letter-spacing:.14em;font-size:14px}
 </style>
 </head>
 <body>
@@ -168,6 +170,33 @@
     <div class="card"><h2>Support team</h2>
       <p class="sub" style="margin:0 0 8px">Counselor, therapist, doctor, group. Keep the next appointment here.</p>
       <input type="text" id="appt" placeholder="Next appointment (date and who)"></div>
+    <div class="card"><h2>Keep my week</h2>
+      <p class="sub" style="margin:0 0 10px">Write it up, change anything you like, then send it to yourself.</p>
+      <input type="text" id="myEmail" inputmode="email" placeholder="My email address">
+      <div class="row" style="margin:10px 0">
+        <button onclick="weekBuild()">Write my week</button></div>
+      <textarea id="weekBox" rows="12" placeholder="Press “Write my week” to see everything from Today, Kids, Money and Me. You can edit it here before sending."></textarea>
+      <div class="row" style="margin-top:10px">
+        <button onclick="weekEmail()">Email me my week</button>
+        <button class="ghost" onclick="weekCopy()">Copy</button></div>
+      <p class="tag" id="weekNote"></p></div>
+
+    <div class="card"><h2>Daily reminder</h2>
+      <p class="sub" style="margin:0 0 8px">Adds a repeating check-in alarm to your phone's calendar.</p>
+      <div class="row" style="align-items:center"><input type="time" id="remTime" value="08:00" style="padding:12px;border-radius:12px;border:1px solid var(--line);background:rgba(8,7,22,.6);color:var(--ink);font:inherit">
+        <button onclick="remind()">Remind me daily</button></div></div>
+
+    <div class="card"><h2>Backup & fresh start</h2>
+      <div class="row">
+        <button class="ghost" onclick="backup()">Save backup to my phone</button>
+        <button class="ghost" onclick="$('#restoreFile').click()">Restore backup</button>
+        <input type="file" id="restoreFile" accept=".json,application/json" hidden></div>
+      <p class="tag" style="margin-top:14px">Start over, a little or all the way. Nothing is deleted until you confirm.</p>
+      <div class="row">
+        <button class="ghost" onclick="clearToday()">Clear today</button>
+        <button class="ghost" onclick="clearLists()">Clear my lists</button>
+        <button class="ghost" onclick="eraseAll()">Erase everything</button></div></div>
+
     <div class="card"><h2>My progress</h2>
       <p class="sub" style="margin:0">Days I checked in:</p><p class="big-num" id="streak">0</p>
       <p class="sub" style="margin:0">Days I did most of my habits:</p><p class="big-num" id="goodDays">0</p>
@@ -183,16 +212,22 @@
         <input type="text" id="say" placeholder="Talk to me…" style="flex:1">
         <button onclick="send()">Send</button></div></div>
   </section>
+  <footer class="credit">
+    <b>Powered by CathiesNest Digital&trade;</b>
+    &copy; 2026 CathiesNest Digital. All rights reserved.<br>
+    Original design and code. Please don't copy, resell or reuse without written permission.
+  </footer>
 </main>
 
 <button id="helpBtn" onclick="help.showModal()">I need support</button>
 <dialog id="help">
   <h2>You're not alone.</h2>
   <p>If you're thinking about hurting yourself, or things feel too dark right now, please reach out this minute.</p>
-  <a class="big" href="tel:988">Call 988 (US Suicide & Crisis Lifeline)</a>
-  <a class="big" href="sms:988">Text 988</a>
+  <div id="crisisLines"></div>
   <a class="big" id="callTrust" href="#" hidden></a>
-  <p class="tag">Outside the US? Search “crisis line” plus your country, or call local emergency services. If you're in immediate danger, call 911.</p>
+  <p class="tag" id="crisisNote"></p>
+  <p class="tag" style="margin-bottom:4px">Not where you are? Choose your country:</p>
+  <select id="crisisCountry" style="width:100%;margin-bottom:12px"></select>
   <button class="ghost" onclick="help.close()">Close</button>
 </dialog>
 
@@ -288,7 +323,7 @@ function reply(q){
   const s=q.toLowerCase();
   if(/(kill|suicid|end it|end my life|don'?t want to (be here|live)|hurt myself|better off without)/.test(s)){
     help.showModal();
-    return "I'm really glad you told me. Your life matters, to Pablo, to Zoe, and to the people who care about you. Please call or text 988 right now, or call someone you trust. I'll be right here after.";}
+    return "I'm really glad you told me. Your life matters, to Pablo, to Zoe, and to the people who care about you. Please use the crisis line on your screen right now, or call someone you trust. I'll be right here after.";}
   if(/(overwhelm|too much|can'?t do|tired|exhaust|stress|anxious|alone|dark|heavy|hopeless)/.test(s))
     return "That sounds really heavy. You don't have to fix everything today. Let's cut it down to three things: eat something, one thing for the kids, one thing for you. Want me to put those on your list? Say “yes”. And if it gets darker, the 'I need support' button is always there.";
   if(/^(yes|yeah|ok|okay)$/.test(s)){["Eat a real meal","One thing for the kids","One thing for me (walk, music, call a friend)"].forEach(addTask);return "Done. Three small things are on your Today list. That's enough."}
@@ -327,6 +362,105 @@ async function fxLoad(){
   fxCalc();}
 ['#fxAmt','#fxFrom','#fxTo'].forEach(s=>$(s).addEventListener('input',fxCalc));
 fxCalc();fxLoad();
+
+// Keep my week: write, edit, email
+$('#myEmail').value=store.get('email','');
+$('#myEmail').oninput=e=>store.set('email',e.target.value.trim());
+function weekBuild(){
+  const nm=moods.map(m=>m[1]),L=[];
+  const mk=k=>store.get(k,[]).map(x=>(x.d?'[x] ':'[ ] ')+x.t);
+  const sect=(title,arr)=>{L.push('',title);arr.length?arr.forEach(x=>L.push(x)):L.push('(nothing yet)')};
+  L.push('MY WEEK - Still I Rise');
+  L.push('','TODAY','Mood: '+(mood[today]!=null?nm[mood[today]]:'not checked in'));
+  L.push('Habits: '+hab[today].length+' of '+habitList.length);
+  habitList.forEach((t,i)=>L.push((hab[today].includes(i)?'[x] ':'[ ] ')+t));
+  if(tasks.length){L.push('','Steps for today:');tasks.forEach(t=>L.push((t.d?'[x] ':'[ ] ')+t.t))}
+  if(grat[today])L.push('','One good thing: '+grat[today]);
+  const r=store.get('reasons','');if(r)L.push('','Why I rise: '+r);
+  L.push('','LAST 7 DAYS');
+  for(let i=6;i>=0;i--){const d=new Date();d.setDate(d.getDate()-i);const k=d.toDateString();
+    L.push(d.toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'})+': mood '+(mood[k]!=null?nm[mood[k]]:'-')+', habits '+((hab[k]||[]).length)+'/'+habitList.length+(grat[k]?', good thing: '+grat[k]:''));}
+  sect('KIDS - Pablo',mk('pablo'));
+  sect('KIDS - Zoe',mk('zoe'));
+  sect('MONEY - Bills',mk('bills'));
+  sect('WORK & BUSINESS',mk('biz'));
+  sect('ME',mk('me'));
+  const ap=store.get('appt','');if(ap)L.push('','Next appointment: '+ap);
+  $('#weekBox').value=L.join('\n');
+  $('#weekNote').textContent='Change anything you like, then press Email me my week.';}
+function weekEmail(){
+  if(!$('#weekBox').value.trim())weekBuild();
+  const em=$('#myEmail').value.trim();
+  if(!em){$('#weekNote').textContent='Add your email address above first.';$('#myEmail').focus();return}
+  location.href='mailto:'+encodeURIComponent(em)+'?subject='+encodeURIComponent('My week - Still I Rise')+'&body='+encodeURIComponent($('#weekBox').value);
+  $('#weekNote').textContent='Your mail app should open. Press Send there. If it does not, use Copy.';}
+function weekCopy(){
+  if(!$('#weekBox').value.trim())weekBuild();
+  const t=$('#weekBox').value;
+  (navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(()=>$('#weekNote').textContent='Copied.').catch(()=>{$('#weekBox').select();$('#weekNote').textContent='Selected. Use Copy from your phone menu.'})}
+
+// Daily reminder (calendar file with a repeating alarm)
+function dl(name,type,text){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([text],{type}));a.download=name;document.body.appendChild(a);a.click();a.remove()}
+function remind(){
+  const t=($('#remTime').value||'08:00').split(':'),d=new Date(),p=n=>String(n).padStart(2,'0');
+  const start=d.getFullYear()+p(d.getMonth()+1)+p(d.getDate())+'T'+p(t[0])+p(t[1])+'00';
+  const stamp=new Date().toISOString().replace(/[-:]|\.\d{3}/g,'');
+  const ics=['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//CathiesNest Digital//Still I Rise//EN','BEGIN:VEVENT','UID:sir-'+Date.now()+'@cathiesnest','DTSTAMP:'+stamp,'DTSTART:'+start,'DURATION:PT15M','RRULE:FREQ=DAILY','SUMMARY:Still I Rise - my daily check-in','DESCRIPTION:Take a minute for yourself. Mood, habits, one good thing.','BEGIN:VALARM','ACTION:DISPLAY','DESCRIPTION:Daily check-in','TRIGGER:PT0M','END:VALARM','END:VEVENT','END:VCALENDAR'].join('\r\n');
+  dl('still-i-rise-reminder.ics','text/calendar',ics);}
+
+// Backup, restore, clear
+function backup(){const o={};Object.keys(localStorage).filter(k=>k.startsWith('sir_')).forEach(k=>o[k]=localStorage.getItem(k));
+  dl('still-i-rise-backup-'+new Date().toISOString().slice(0,10)+'.json','application/json',JSON.stringify(o))}
+$('#restoreFile').onchange=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();
+  r.onload=()=>{try{const o=JSON.parse(r.result);if(!confirm('Replace what is on this phone with this backup?'))return;
+    Object.entries(o).forEach(([k,v])=>{if(k.startsWith('sir_'))localStorage.setItem(k,v)});location.reload()}catch(x){alert('That file could not be read.')}};
+  r.readAsText(f)};
+function clearToday(){if(!confirm("Clear today's mood, habits, steps and good thing?"))return;
+  delete mood[today];store.set('mood',mood);hab[today]=[];store.set('hab',hab);delete grat[today];store.set('grat',grat);
+  try{localStorage.removeItem('sir_tasks:'+today)}catch(e){}location.reload()}
+function clearLists(){if(!confirm('Clear the Kids, Money, Work and Me lists?'))return;
+  ['pablo','zoe','bills','biz','me'].forEach(k=>store.set(k,[]));$$('.list').forEach(drawList)}
+function eraseAll(){if(!confirm('Erase everything saved on this phone? This cannot be undone.'))return;
+  Object.keys(localStorage).filter(k=>k.startsWith('sir_')).forEach(k=>localStorage.removeItem(k));location.reload()}
+
+// Crisis lines that change with location
+const CRISIS={
+ US:{n:"United States",em:"911",lines:[{t:"Call 988 (Suicide & Crisis Lifeline)",tel:"988"},{t:"Text 988",sms:"988"}]},
+ PH:{n:"Philippines",em:"911",note:"If a line is busy, try the next one.",lines:[{t:"Call NCMH Crisis Hotline: 1553",tel:"1553"},{t:"NCMH (mobile): 0917 899 8727",tel:"09178998727"},{t:"NCMH (mobile): 0966 351 4518",tel:"09663514518"},{t:"Hopeline: 0917 558 4673",tel:"09175584673"}]},
+ CA:{n:"Canada",em:"911",lines:[{t:"Call 988 (Suicide Crisis Helpline)",tel:"988"},{t:"Text 988",sms:"988"}]},
+ GB:{n:"United Kingdom",em:"999",lines:[{t:"Call Samaritans: 116 123",tel:"116123"}]},
+ IE:{n:"Ireland",em:"112",lines:[{t:"Call Samaritans: 116 123",tel:"116123"}]},
+ AU:{n:"Australia",em:"000",lines:[{t:"Call Lifeline: 13 11 14",tel:"131114"}]},
+ NZ:{n:"New Zealand",em:"111",lines:[{t:"Call 1737 (Need to talk?)",tel:"1737"},{t:"Text 1737",sms:"1737"}]},
+ MX:{n:"México",em:"911",lines:[{t:"Línea de la Vida: 800 911 2000",tel:"8009112000"}]}
+};
+function guessCountry(){
+  let tz='';try{tz=Intl.DateTimeFormat().resolvedOptions().timeZone||''}catch(e){}
+  const byTz={'Asia/Manila':'PH','Europe/London':'GB','Europe/Dublin':'IE','Pacific/Auckland':'NZ','America/Mexico_City':'MX','America/Cancun':'MX','America/Monterrey':'MX','America/Tijuana':'MX','America/Toronto':'CA','America/Vancouver':'CA','America/Edmonton':'CA','America/Winnipeg':'CA','America/Halifax':'CA','America/Regina':'CA','America/St_Johns':'CA'};
+  if(byTz[tz])return byTz[tz];
+  if(tz.indexOf('Australia/')===0)return 'AU';
+  if(tz.indexOf('America/')===0||tz==='Pacific/Honolulu'||tz.indexOf('US/')===0)return 'US';
+  if(!tz){const r=((navigator.language||'').split('-')[1]||'').toUpperCase();return CRISIS[r]?r:'US'}
+  return 'OTHER';
+}
+function drawCrisis(){
+  const saved=store.get('country','')||'',code=saved||guessCountry(),c=CRISIS[code];
+  const sel=$('#crisisCountry');
+  if(!sel.options.length){
+    sel.innerHTML='<option value="">Automatic (this phone\'s location)</option>'+Object.keys(CRISIS).map(k=>`<option value="${k}">${CRISIS[k].n}</option>`).join('')+'<option value="OTHER">Another country</option>';
+    sel.onchange=e=>{store.set('country',e.target.value);drawCrisis()};}
+  sel.value=saved;
+  let html='';
+  if(c){
+    c.lines.forEach(l=>{html+=`<a class="big" href="${l.sms?'sms:'+l.sms:'tel:'+l.tel}">${esc(l.t)}</a>`});
+    if(c.em)html+=`<a class="big" href="tel:${c.em}" style="background:transparent;color:var(--accent);border:1px solid var(--accent)">Emergency: ${c.em}</a>`;
+    $('#crisisNote').textContent='If you are in immediate danger, call the emergency number now.'+(c.note?' '+c.note:'');
+  }else{
+    html='<a class="big" href="https://findahelpline.com" target="_blank" rel="noopener">Find a helpline in your country</a>';
+    $('#crisisNote').textContent='If you are in immediate danger, call your local emergency number now.';
+  }
+  $('#crisisLines').innerHTML=html;}
+drawCrisis();
 
 drawMood();drawHabits();drawTasks();$$('.list').forEach(drawList);drawTrust();
 </script>
