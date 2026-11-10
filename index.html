@@ -118,7 +118,8 @@
     <div class="card"><h2>My 5 small habits</h2>
       <div id="habits"></div>
       <div class="bar"><i id="hbar"></i></div>
-      <p class="tag" id="hnote"></p></div>
+      <p class="tag" id="hnote"></p>
+      <button class="ghost" onclick="clearHabits()">Clear / reset</button></div>
 
     <div class="card"><h2>Today, one step at a time</h2>
       <div id="tasks"></div>
@@ -157,6 +158,7 @@
         <button class="ghost" onclick="fxSwap()" aria-label="Swap">⇄</button>
         <select id="fxTo" style="flex:1"></select></div>
       <p class="big-num" id="fxOut">…</p>
+      <button class="ghost" onclick="fxReset()" style="margin-bottom:10px">Clear / reset</button>
       <p class="tag" id="fxNote"></p></div>
 
     <div class="card"><h2>Bills coming up</h2><div class="list" data-key="bills"></div>
@@ -291,6 +293,7 @@ function drawHabits(){
   $('#hbar').style.width=(n/habitList.length*100)+'%';
   $('#hnote').textContent=n===0?"Start with just one.":n<3?"Nice. Every one counts.":n<5?"Strong day. Keep it easy.":"All five. Proud of you.";
   $('#goodDays').textContent=Object.values(hab).filter(a=>a.length>=3).length;}
+function clearHabits(){hab[today]=[];store.set('hab',hab);drawHabits()}
 function togH(i){const a=hab[today],j=a.indexOf(i);j<0?a.push(i):a.splice(j,1);store.set('hab',hab);drawHabits()}
 
 // Tasks
@@ -363,6 +366,7 @@ function fxCalc(){
   const r=fx.rates[t]/fx.rates[f];
   $('#fxOut').textContent=(a*r).toLocaleString(undefined,{maximumFractionDigits:2})+' '+t;
   $('#fxNote').textContent=`1 ${f} = ${r.toLocaleString(undefined,{maximumFractionDigits:4})} ${t} · updated ${new Date(fx.at).toLocaleString()}`;}
+function fxReset(){$('#fxAmt').value='';$('#fxFrom').value='USD';$('#fxTo').value='PHP';fxCalc();$('#fxAmt').focus()}
 function fxSwap(){const f=$('#fxFrom').value;$('#fxFrom').value=$('#fxTo').value;$('#fxTo').value=f;fxCalc()}
 async function fxLoad(){
   try{const r=await fetch('https://open.er-api.com/v6/latest/USD');const j=await r.json();
