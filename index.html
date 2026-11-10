@@ -79,6 +79,7 @@
   .totop{display:flex;align-items:center;justify-content:center;width:48px;height:48px;margin:6px auto 0;border-radius:50%;border:1px solid var(--accent);color:var(--accent);text-decoration:none;font-size:24px;line-height:1;background:rgba(8,7,22,.6);transition:transform .25s ease,background .25s ease,color .25s ease}
   .totop:hover{transform:translateY(-4px);background:var(--accent);color:#14112a}
   @media (prefers-reduced-motion:reduce){.logo,.totop{transition:none}.logo.floaty{animation:none}.logo:hover{transform:none}}
+  .chip{padding:8px 12px;font-size:15px;border-radius:999px}
 </style>
 </head>
 <body>
@@ -113,6 +114,8 @@
 
     <div class="card"><h2>Why I rise</h2>
       <textarea id="reasons" rows="2" placeholder="Pablo. Zoe. Me. (write your own reasons)"></textarea>
+      <div class="row" style="margin:10px 0 0"><button onclick="randomReminder()">Random Reminder</button></div>
+      <p id="remindOut" hidden style="font-style:italic;margin:12px 0 0;padding-left:12px;border-left:3px solid var(--accent)"></p>
       <p class="tag">Read this when the day gets heavy.</p></div>
 
     <div class="card"><h2>My 5 small habits</h2>
@@ -125,7 +128,8 @@
       <div id="tasks"></div>
       <div class="row" style="margin-top:10px">
         <input type="text" id="newTask" placeholder="Add something small…" style="flex:1">
-        <button onclick="addTask()">Add</button></div></div>
+        <button onclick="addTask()">Add</button></div>
+      <button class="ghost" onclick="clearTasks()" style="margin-top:10px">Clear / reset</button></div>
 
     <div class="card"><h2>Tonight: one good thing</h2>
       <input type="text" id="grat" placeholder="Something that went right today, even small">
@@ -216,6 +220,7 @@
   <section id="chat" hidden>
     <div class="card"><h2>Your companion</h2>
       <p class="sub" style="margin:0 0 10px">Try: “plan my day”, “I'm overwhelmed”, “add bill electric Friday”, “what about Pablo”.</p>
+      <div class="row" id="chips" style="margin:0 0 10px"></div>
       <div id="log"></div>
       <div class="row" style="margin-top:10px">
         <input type="text" id="say" placeholder="Talk to me…" style="flex:1">
@@ -330,24 +335,117 @@ $('#appt').oninput=e=>store.set('appt',e.target.value);
 // Companion
 const log=$('#log');
 function say(t,who){log.insertAdjacentHTML('beforeend',`<div class="msg ${who}">${esc(t)}</div>`);log.lastElementChild.scrollIntoView({block:'nearest'})}
-function reply(q){
-  const s=q.toLowerCase();
-  if(/(kill|suicid|end it|end my life|don'?t want to (be here|live)|hurt myself|better off without)/.test(s)){
-    help.showModal();
-    return "I'm really glad you told me. Your life matters, to Pablo, to Zoe, and to the people who care about you. Please use the crisis line on your screen right now, or call someone you trust. I'll be right here after.";}
-  if(/(overwhelm|too much|can'?t do|tired|exhaust|stress|anxious|alone|dark|heavy|hopeless)/.test(s))
-    return "That sounds really heavy. You don't have to fix everything today. Let's cut it down to three things: eat something, one thing for the kids, one thing for you. Want me to put those on your list? Say “yes”. And if it gets darker, the 'I need support' button is always there.";
-  if(/^(yes|yeah|ok|okay)$/.test(s)){["Eat a real meal","One thing for the kids","One thing for me (walk, music, call a friend)"].forEach(addTask);return "Done. Three small things are on your Today list. That's enough."}
-  if(/plan|schedule|organize|my day/.test(s)){
-    ["Morning: kids ready and out the door","Midday: one work or business task","Afternoon: one bill or errand","Evening: time with Pablo and Zoe","Night: 20 minutes just for me"].forEach(addTask);
-    return "I put a gentle plan on your Today list: one thing in each part of the day. If it's too much, skip anything. Rest counts too.";}
-  let m=s.match(/add bill (.+)/); if(m){addL('bills',m[1]);return "Added to Bills: "+m[1]+"."}
-  m=s.match(/add (?:task|todo) (.+)/); if(m){addTask(m[1]);return "Added to Today."}
-  if(/pablo/.test(s)) return "Pablo's 14, and teens open up most when you're doing something side by side: driving, cooking, shooting hoops. "+ideas.Pablo[Math.floor(Math.random()*4)];
-  if(/zoe/.test(s)) return "Zoe's 10 and still loves your full attention. "+ideas.Zoe[Math.floor(Math.random()*4)];
-  if(/bill|money|rent/.test(s)) return "Open the Money tab and list what's due and when. Start with the one due soonest. One at a time.";
-  if(/work|business/.test(s)) return "Pick one thing that moves work or the business forward today and add it on the Money tab. The rest can wait.";
-  return "I'm here. I can plan your day, add bills or tasks, give you an idea for Pablo or Zoe, or just listen. What's on your mind?";}
+// Smarter companion: understands more, uses Dino's own day, gives real steps
+const reply=(()=>{
+  const ctx={last:null,pending:null,n:{}};
+  const hr=()=>new Date().getHours();
+  const hasTask=t=>tasks.some(x=>x.t===t);
+  const addMany=a=>{a.forEach(t=>{if(!hasTask(t))addTask(t)})};
+  const offer=(txt,list)=>{ctx.pending=()=>{addMany(list);return "Done. I added "+(list.length>1?"those "+list.length+" steps":"that")+" to your Today list. Small steps, one at a time."};return txt};
+  const stats=()=>({days:Object.keys(mood).length,hn:(hab[today]||[]).length,dn:tasks.filter(t=>t.d).length,tn:tasks.length});
+  const country=()=>{try{return store.get('country','')||guessCountry()}catch(e){return 'US'}};
+  const openBills=()=>store.get('bills',[]).filter(b=>!b.d);
+  const pick=a=>a[Math.floor(Math.random()*a.length)];
+
+  const I=[
+  {id:'crisis',t:/(kill myself|killing myself|suicid|end it all|end my life|want to die|wanna die|wish i (was|were) (dead|gone)|don'?t want to (be here|live|wake up)|no (reason|point) (to|in) (live|living|going on)|can'?t go on|better off (dead|without me)|not worth living|take my (own )?life|hurt myself|harm myself|disappear forever|give up on (life|everything)|nothing to live for|end the pain|tired of (living|life))/i,
+   r:[()=>{help.showModal();return "I'm really glad you told me. Your life matters, and this pain is real, but it can change. You don't have to face it alone. Please use the crisis line on your screen right now, or call someone you trust and tell them how bad it is. If you think you might act on these thoughts, call emergency services. I'm here with you."}]},
+  {id:'tupac',t:/(tupac|2pac)/i,
+   r:[()=>offer("Pac is a great choice. His whole story is about growing where nobody expected anything to grow, and his poetry book, The Rose That Grew from Concrete, says it in the title. Put on one of his albums, take a 10-minute walk, and let it fuel you. Want me to add “Play a favorite album and walk” to your list? Say “yes”.",["Play a favorite album and walk"])]},
+  {id:'distress',t:/(depress|hopeless|worthless|empty inside|\bnumb\b|feeling down|feel down|so sad|\bsad\b|crying|\bcry\b|can'?t cope|falling apart|breaking down|miserable|struggling|not okay|not ok\b|rough day|hard day|bad day|terrible day|feel lost|so heavy|\bheavy\b|tired of (everything|it all))/i,
+   r:[()=>offer("I'm sorry it's this heavy today. Thank you for telling me. You don't have to fix anything right now. Try one small thing: drink a glass of water, step outside for 5 minutes, and text one person you trust. Small moves count when everything feels big. Want me to put those on your list? Say “yes”.",["Drink water and eat something","5 minutes outside","Text one person I trust"]),
+      ()=>"Heavy days are real, and they do pass, even when it doesn't feel like they will. Feelings are weather, not the whole sky. Be gentle with yourself today. If it has been like this for more than a couple of weeks, please bring it to your counselor or doctor; that's strength, not weakness. If it gets darker, or you start thinking about hurting yourself, tap “I need support” right away.",
+      ()=>"You showed up here, and that counts. When your mind is loud, lower the bar: eat something, wash up, and do one thing for the kids. That is a win today. Tell me if you want me to plan the rest of the day small."]},
+  {id:'lonely',t:/(lonely|i'?m alone|so alone|feel alone|isolated|no one|nobody|no friends)/i,
+   r:[()=>{const nm=store.get('tn','');return offer("Feeling alone is heavy, and a lot of single dads feel it. Reach out to one person today, even a short text: “Hey, thinking of you. Got 5 minutes?”"+(nm?" You saved "+nm+" on the Me tab. Maybe start there.":" You can save someone you trust on the Me tab.")+" Connection grows when you reach first. Want me to add it to your list? Say “yes”.",["Text or call one person"])},
+      ()=>"Connection doesn't have to be big. Ask Pablo or Zoe for a 10-minute walk or a card game, say hello to a neighbor, or join something regular like a dads' group, a gym, a faith community or a sports league. Small contact, repeated often, beats one big effort."]},
+  {id:'anger',t:/(angry|anger|\bmad\b|furious|yelled|yelling|lost my temper|snapped|\brage\b|irritated|frustrat)/i,
+   r:[()=>"Anger often sits on top of stress, tiredness or feeling unheard. In the moment: pause, drop your shoulders, breathe out slowly, and step away for two minutes. Say, “I need a minute, then we'll talk.” If you already raised your voice with the kids, repair it: “I'm sorry I yelled. I love you. Next time I'll take a breath first.” Kids trust dads who repair.",
+      ()=>"Try this: name it (“I'm frustrated”), move your body (a walk, push-ups, shake out your hands), then talk. Anger fades in a few minutes if you don't feed it. If it keeps blowing up, a counselor can give you tools that really work."]},
+  {id:'guilt',t:/(bad dad|bad father|failing|failure|not enough|guilty|guilt|ashamed|shame|let (them|my kids|pablo|zoe) down|ruined|messed up|regret)/i,
+   r:[()=>"Hear this: a dad who worries this much about doing right is a dad who cares. Kids don't need perfect. They need present, honest and trying. Name one thing you did right for Pablo or Zoe this week, even a small one, and type it in “Tonight: one good thing” on the Today screen.",
+      ()=>"Guilt says “you're not enough.” The facts say you are still here, still trying, still loving them. Repair what you can with a real sorry or a hug, forgive the rest, and take the next small step."]},
+  {id:'sleep',t:/(can'?t sleep|cannot sleep|insomnia|\bawake\b|sleep|tired|exhaust|drained|no energy|wiped out|nightmare)/i,
+   r:[()=>{if(hr()>=21||hr()<5)return "It's late, so let's help your body wind down. Put the phone down, dim the lights, and breathe in for 4 and out for 6, ten times. If your mind is racing, write tomorrow's top three things on a note so you don't have to hold them. Skip the clock. Resting quietly still helps even when sleep is slow to come.";
+      return offer("Low energy is real, especially when you're doing it all. Drink water, eat something with protein, and take 10 minutes outside in daylight. Aim for a steady bedtime tonight with no screens for the last 30 minutes. If you've felt drained or sleepless for more than a couple of weeks, please mention it to your doctor. Want me to add “Wind down by 10pm” to your list? Say “yes”.",["Wind down by 10pm"])},
+      ()=>"Sleep tips that actually help: the same wake-up time every day, no caffeine after noon, a cool dark room, and a short wind-down (shower, stretch, read). If you can't sleep after 20 minutes, get up, do something quiet and dim, then try again."]},
+  {id:'money',t:/(money|\bbills?\b|\brent\b|broke|debt|\bowe\b|\bpay\b|payment|afford|budget|expens|loan|credit card|mortgage|utilit|paycheck|salary)/i,
+   r:[()=>{const b=openBills(),c=country();let s="Money stress is heavy, so let's make it concrete. ";
+      s+=b.length?"You have "+b.length+" open bill"+(b.length>1?"s":"")+" listed ("+b.slice(0,3).map(x=>x.t).join("; ")+"). ":"List every bill with its due date on the Money tab so nothing hides in your head. ";
+      s+="Pay in this order: housing, utilities, food, transport, then the rest. If you can't cover one, contact the company before it's due and ask for an extension or a payment plan. Many will work with you. ";
+      s+=c==='US'?"In the US, dialing 211 connects you to help with rent, food and utilities. ":c==='PH'?"In the Philippines, your barangay or city social welfare office can point you to assistance programs. ":"Your local social services office can point you to assistance programs. ";
+      return s+"One bill at a time."},
+      ()=>"Try a 15-minute “money date” once a week: what's coming in, what's due in the next 14 days, and one thing you can cut. Small and regular beats big and stressful. You can also use the converter on the Money tab if you're sending money home."]},
+  {id:'work',t:/\b(work|job|boss|business|clients?|customers?|income|career|shift|employer)\b/i,
+   r:[()=>offer("Pick one needle-mover for work today, the task that most moves money or progress, and do it first for 60 to 90 minutes with your phone away. Batch emails and admin into one slot. Everything else is a bonus. Want me to add “Work: one important task” to Today? Say “yes”.",["Work: one important task"]),
+      ()=>"Protect your time: block your work hours around school drop-off and pick-up, and tell clients or your boss when you're available. Saying “I can get that to you Thursday” is professional, not weak. Time off for the kids is part of the plan, not a failure of it."]},
+  {id:'school',t:/(school|homework|\bgrades?\b|teacher|exam|report card|pick ?up|drop ?off|extracurricular|practice)/i,
+   r:[()=>offer("School stays manageable with a 10-minute Sunday check: look at both kids' calendars, forms, tests and activities, and put every deadline on the Kids tab. Pick one homework time each day (same time, same place, snack first, phone away). Email teachers early if either kid is struggling; they want to help. Want me to add the Sunday check to your list? Say “yes”.",["Sunday: 10-minute school check for Pablo and Zoe"])]},
+  {id:'pablo',t:s=>/\b(pablo|my son|teen|teenager)\b/i.test(s)&&!/\b(zoe|my daughter)\b/i.test(s),
+   r:[()=>"Pablo's 14. Teens talk most when it's side by side, not face to face: driving, cooking, shooting hoops, a walk. Start light, like “What was one good thing and one annoying thing today?”, then really listen without fixing. Try it once this week.",
+      ()=>"With teens: listen first, advise second. Give him real choices where you can (what's for dinner, which chore first) so he feels respected, and keep your rules few and clear. Tell him one specific thing you're proud of. If he's withdrawn for weeks, his grades drop suddenly, or his mood swings a lot, talk calmly with him and consider his school counselor or doctor.",
+      ()=>"An idea for Pablo: "+pick(ideas.Pablo)]},
+  {id:'zoe',t:s=>/\b(zoe|my daughter)\b/i.test(s)&&!/\b(pablo|my son)\b/i.test(s),
+   r:[()=>"Zoe's 10 and still loves one-on-one time. Ten uninterrupted minutes a day (a book, drawing, a game) fills her cup more than a big outing. Praise her effort, not only results (“I saw how hard you worked on that”), and keep bedtime predictable. Bedtime is often when ten-year-olds open up.",
+      ()=>"At 10, big feelings can come out sideways. When Zoe is upset, get down to her level, name the feeling (“You look sad”), listen, then solve the problem together. Routines help a lot: the same wake-up, homework, dinner and bedtime.",
+      ()=>"An idea for Zoe: "+pick(ideas.Zoe)]},
+  {id:'kids',t:/\b(kids|children|parenting|both of them|pablo and zoe|zoe and pablo|my family)\b|\b(pablo|my son)\b.*\b(zoe|my daughter)\b|\b(zoe|my daughter)\b.*\b(pablo|my son)\b/i,
+   r:[()=>offer("A simple rhythm for both kids: 15 minutes one-on-one with each of them a few times a week, a shared dinner when you can, and a Sunday 10-minute look at school and activities. You don't have to be perfect, just regular. Want me to add tonight's one-on-one time to your list? Say “yes”.",["15 minutes one-on-one with Pablo or Zoe"])]},
+  {id:'overwhelm',t:/(overwhelm|too much|can'?t do (this|it|anything)|stress|anxious|anxiety|panic|worried|pressure|swamped|so much to do|burn(ed|t)? ?out)/i,
+   r:[()=>offer("Let's slow it down together. Breathe in through your nose for 4, out slowly for 6, five times. Then look around and name 5 things you can see. Your body will settle. After that, we shrink today to three things: eat something, one thing for the kids, one thing for you. Want me to add them? Say “yes”.",["Eat a real meal","One thing for the kids","One thing for me (walk, music, call a friend)"]),
+      ()=>"When everything feels urgent, nothing is. What's the one thing that must happen today, like a bill due or a school form? Do that first. The rest can wait until tomorrow. Tell me what it is and say “add task” followed by it, or say “plan my day” and I'll set up a gentle plan."]},
+  {id:'plan',t:/(plan|schedule|organi[sz]e|my day|routine|balance|divide|time management|prioriti[sz]e|where do i start|what should i do|what do i do)/i,
+   r:[()=>{addMany(["Morning: kids ready and out the door","Midday: one work or business task","Afternoon: one bill or errand","Evening: time with Pablo and Zoe","Night: 20 minutes just for me"]);return "I put a gentle plan on your Today list: mornings for the kids, one focused work block, one bill or errand, evening for Pablo and Zoe, and 20 minutes for you. As a rough guide, think work about 40%, kids 30%, home and bills 15%, you 15%. Skip anything that doesn't fit. A small plan you finish beats a big one you don't."}]},
+  {id:'move',t:/(exercise|workout|\bgym\b|\bjog\b|push-?ups|get fit|out of shape|\bwalk\b)/i,
+   r:[()=>offer("Movement is one of the best mood lifters there is. Start tiny: a 10-minute walk, ideally outside in daylight. Do it before the day gets busy, or walk with Zoe or Pablo so it counts as family time too. Want me to add “10-minute walk” to your list? Say “yes”.",["10-minute walk"])]},
+  {id:'food',t:/(\beat\b|hungry|\bfood\b|\bmeals?\b|dinner|\bcook|lunch|breakfast|groceries)/i,
+   r:[()=>offer("Keep food simple: pick three easy dinners for the week (pasta and veggies, rice bowls, eggs and toast), shop once, and let Pablo cook one night. A full stomach helps your mood and your patience. Want me to add “Plan 3 dinners and a grocery list” to your list? Say “yes”.",["Plan 3 dinners and a grocery list"])]},
+  {id:'grateful',t:/(grateful|thankful|gratitude|good thing|something good|went well|\bproud\b)/i,
+   r:[()=>"That's worth holding onto. Type it in “Tonight: one good thing” on the Today screen so you can look back on it later. Noticing the good takes practice, and you're doing it."]},
+  {id:'therapy',t:/(therap|counsel|doctor|psychiatr|medication|appointment|support group)/i,
+   r:[()=>"Seeing a counselor or doctor is a smart, strong move. Put your next appointment under Me, Support team, so it doesn't get lost. Before a visit, jot down how your mood has been, your sleep, what's helping, and what you want to ask. If you don't have one yet, ask your doctor, your insurer or a local clinic for a referral. If it's urgent, tap “I need support”."]},
+  {id:'progress',t:/(progress|how am i doing|streak|my stats|how'?s my)/i,
+   r:[()=>{const s=stats();return "You've checked in "+s.days+" day"+(s.days===1?"":"s")+". Today you've done "+s.hn+" of "+habitList.length+" habits and "+s.dn+" of "+s.tn+" steps. Every one counts, and missing a day is just a day. Start again whenever you're ready."}]},
+  {id:'motivation',t:/(motivat|inspir|encourag|\bstrong\b|strength|pep talk|keep going|need a push|\bquit\b)/i,
+   r:[()=>{const s=stats();return "You're still here, still trying, and that is strength. "+(s.days>0?"You've checked in "+s.days+" day"+(s.days>1?"s":"")+" so far. ":"")+"Strong isn't doing it all alone. It's showing up, asking for help, and taking the next small step. What's one small step for the next hour?"},
+      ()=>"Think of the rose that grew from concrete: something beautiful pushing up where it wasn't supposed to. That's you, raising Pablo and Zoe and rebuilding. You don't have to do it fast. You just have to keep growing.",
+      ()=>"You've made it through every hard day you've had so far. That says something about you. Today only needs a few small wins: one for the kids, one for you, one for the bills.",
+      ()=>"Pablo and Zoe are watching how you handle hard things. Every time you get up and try again, you teach them it's possible. That's a legacy worth building, one ordinary day at a time.",
+      ()=>"Rest is part of the work. A steady dad who sleeps, eats and takes a walk does more for his kids than a perfect dad who burns out. Take care of the person they depend on: you."]},
+  {id:'thanks',t:/^(thanks|thank you|thx|ty)\b/i,
+   r:[()=>"Anytime, Dino. I'm proud of you for showing up."]},
+  {id:'help',t:/(what can you do|how does this work|^help\b|can you help|i need help|need some help|help me)/i,
+   r:[()=>"I'm here, and I'm glad you asked. I can plan your day, help with bills and work, give you ideas for Pablo and Zoe, talk through stress, sleep, anger or loneliness, and give you a boost when you need it. Tell me what's going on, or tap a button above. If it's urgent or you feel unsafe, tap “I need support” now."]},
+  {id:'greet',t:/^(hi|hello|hey|yo|sup|good (morning|afternoon|evening))\b/i,
+   r:[()=>{const g=hr()<12?"Good morning":hr()<18?"Good afternoon":"Good evening";let s=g+", Dino. ";if(mood[today]===0)s+="I saw you checked in as heavy today. I'm here, and we'll keep it light. ";else if(mood[today]==null)s+="How are you feeling right now? ";return s+"What do you need?"}]}
+  ];
+
+  const fallbacks=["I want to make sure I help. Tell me a bit more, or tap one of the buttons above. I can help with your day, money, work, Pablo and Zoe, sleep, stress, or just listen. What's the hardest part right now?",
+    "I'm here and I'm listening. Say a little more, or try “plan my day”, “I'm stressed”, “tips for Pablo”, or “motivate me”."];
+
+  const run=x=>{ctx.last=x;ctx.pending=null;const r=x.r;const i=ctx.n[x.id]===undefined?0:(ctx.n[x.id]+1)%r.length;ctx.n[x.id]=i;return r[i]()};
+
+  return function(q){
+    const s=q.toLowerCase().trim();
+    if(I[0].t.test(s))return run(I[0]);
+    let m;
+    if((m=q.match(/^\s*add (?:a )?bills?[:\s]+(.+)/i))){ctx.pending=null;addL('bills',m[1].trim());return "Added to Bills: "+m[1].trim()+"."}
+    if((m=q.match(/^\s*(?:add (?:a )?(?:task|todo|step)|remind me to)[:\s]+(.+)/i))){ctx.pending=null;addTask(m[1].trim());return "Added to Today: "+m[1].trim()+"."}
+    if((m=q.match(/^\s*add (pablo|zoe|work|me)[:\s]+(.+)/i))){ctx.pending=null;const k={pablo:'pablo',zoe:'zoe',work:'biz',me:'me'}[m[1].toLowerCase()];addL(k,m[2].trim());return "Added to "+(m[1].charAt(0).toUpperCase()+m[1].slice(1).toLowerCase())+": "+m[2].trim()+"."}
+    if(/^(yes|yeah|yep|yup|sure|ok|okay|please|do it|go ahead)[.! ]*$/.test(s)){if(ctx.pending){const f=ctx.pending;ctx.pending=null;return f()}return "Tell me what's on your mind, or tap one of the buttons above, and I'll help."}
+    if(/^(no|nope|no thanks|not now|nah)[.! ]*$/.test(s)){ctx.pending=null;return "No problem. I'm here whenever you want to talk."}
+    if(/^(more|another|again|next|tell me more|give me another|one more)[.! ]*$/.test(s)&&ctx.last)return run(ctx.last);
+    for(const x of I){if(x.t instanceof RegExp?x.t.test(s):x.t(s))return run(x)}
+    ctx.pending=null;ctx.n.fb=((ctx.n.fb??-1)+1)%fallbacks.length;return fallbacks[ctx.n.fb];
+  };
+})();
+// Quick-tap topics so he never has to type
+(function(){
+  const C=[["Plan my day","plan my day"],["I'm overwhelmed","I'm overwhelmed"],["Can't sleep","I can't sleep"],["Money worry","I'm worried about money"],["Pablo","tips for Pablo"],["Zoe","tips for Zoe"],["Motivate me","motivate me"],["I feel alone","I feel alone"]];
+  $('#chips').innerHTML=C.map((c,i)=>`<button class="ghost chip" data-i="${i}">${esc(c[0])}</button>`).join('');
+  $$('#chips .chip').forEach(b=>b.onclick=()=>{$('#say').value=C[b.dataset.i][1];send()});
+})();
+// END companion
 function send(){const v=$('#say').value.trim();if(!v)return;say(v,'me');$('#say').value='';setTimeout(()=>say(reply(v),'bot'),400)}
 $('#say').addEventListener('keydown',e=>{if(e.key==='Enter')send()});
 say("Hey Dino. I'm glad you're here. Nothing to prove today. What do you need?",'bot');
@@ -482,6 +580,37 @@ $('#toTop').onclick=e=>{e.preventDefault();
   const t=$('nav button[data-tab="today"]');
   if(!t.classList.contains('on'))t.click();
   else scrollTo({top:0,behavior:'smooth'})};
+
+// Clear today's steps (does not touch "Why I rise")
+function clearTasks(){tasks=[];store.set('tasks:'+today,tasks);drawTasks()}
+
+// Random reminder: a warm nudge about why to keep going
+const REMINDERS=[
+ "Pablo and Zoe don't need a perfect dad. They need the one who keeps showing up, and that's you. Today, showing up is enough.",
+ "You've already made it through the hardest days you've had. That wasn't luck. That was you, and you're still here.",
+ "Someday Pablo is going to remember how his dad kept going when it was hard. Zoe will too. Keep writing that story.",
+ "Healing isn't a straight line. A rough day doesn't erase your progress, it just means you're human. Take a breath and start again.",
+ "You don't have to feel strong today. You just have to take one small step. A glass of water, a short walk, a text to a friend. That counts.",
+ "A year from now, there's a version of you who's grateful you didn't give up on today. Do this one for him.",
+ "Zoe's laugh, Pablo's questions, the way the house feels when you're all together. Those moments are worth sticking around for, and there are so many more coming.",
+ "Asking for help isn't weakness. It's one of the bravest things a dad can do. You're allowed to lean on people.",
+ "Like a rose pushing up through concrete, you're growing in a place that wasn't made easy for you. That makes it even more impressive.",
+ "You are more than your hardest days. You're a father, a fighter, a man still rising. One day at a time is plenty.",
+ "Rest isn't quitting. If today is heavy, do the small things, be gentle with yourself, and let tomorrow be a fresh start.",
+ "Your kids are learning from you what it looks like to get back up. That might be the most powerful lesson anyone can teach.",
+ "You're not behind. You're rebuilding, and rebuilding takes time. Be as patient with yourself as you'd be with Pablo or Zoe.",
+ "The people who love you would choose you every time, hard days included. You matter to them, and you matter, period.",
+ "Small wins add up. Dishes done, a bill paid, five minutes with Zoe. Stack enough of those and you've built a good life.",
+ "On the days you can't see the way forward, trust the next step. You don't need the whole map to keep walking."
+];
+let lastRem=-1;
+function randomReminder(){
+  let i;do{i=Math.floor(Math.random()*REMINDERS.length)}while(i===lastRem&&REMINDERS.length>1);
+  lastRem=i;
+  const mine=($('#reasons').value||'').trim();
+  let t=REMINDERS[i];
+  if(mine&&Math.random()<0.35)t='In your own words: “'+(mine.length>140?mine.slice(0,140)+'…':mine)+'” That still holds true. '+t;
+  const o=$('#remindOut');o.textContent=t;o.hidden=false;}
 
 drawMood();drawHabits();drawTasks();$$('.list').forEach(drawList);drawTrust();
 </script>
